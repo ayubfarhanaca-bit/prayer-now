@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f766e" />
+  <link rel="manifest" href="manifest.json" />
+  <title>Prayer Now</title>
+  <style>
+    :root { color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: linear-gradient(145deg, #0f766e, #064e3b); color: white; }
+    .card { width: min(92vw, 430px); padding: 28px; border-radius: 28px; background: rgba(255,255,255,.14); backdrop-filter: blur(18px); box-shadow: 0 24px 70px rgba(0,0,0,.28); }
+    h1 { margin: 0 0 8px; font-size: 24px; font-weight: 700; }
+    .now { font-size: 64px; line-height: 1; font-weight: 800; margin: 28px 0 8px; }
+    .sub { opacity: .9; font-size: 18px; }
+    .time { font-size: 44px; font-weight: 700; margin-top: 20px; }
+    .next { margin-top: 20px; padding: 16px; border-radius: 18px; background: rgba(255,255,255,.15); }
+    .row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.16); }
+    .row:last-child { border-bottom: 0; }
+    button { width: 100%; margin-top: 20px; border: 0; padding: 14px 16px; border-radius: 16px; font-weight: 700; color: #064e3b; background: white; }
+    small { display: block; margin-top: 14px; opacity: .75; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Prayer Now</h1>
+    <div id="date" class="sub">Loading prayer times…</div>
+    <div id="currentPrayer" class="now">—</div>
+    <div id="status" class="sub">Allow location access for accurate times.</div>
+    <div id="clock" class="time">--:--</div>
+    <section class="next">
+      <div class="row"><span>Next prayer</span><strong id="nextPrayer">—</strong></div>
+      <div class="row"><span>Next time</span><strong id="nextTime">—</strong></div>
+    </section>
+    <section class="next" id="times"></section>
+    <button onclick="loadPrayerTimes()">Refresh</button>
+    <small>Uses your iPhone location and AlAdhan prayer-times API. Default method: Muslim World League. Change METHOD in the code if your mosque follows another method.</small>
+  </main>
+
+<script>
+const METHOD = 3; // 3 = Muslim World League. Try 4 for Umm Al-Qura, 8 for Gulf Region, etc.
+const PRAYERS = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"];
+let prayerTimes = null;
+
+function pad(n){ return String(n).padStart(2, "0"); }
+function minutesFromTime(t){ const [h,m] = t.split(":").map(Number); return h*60+m; }
+function cleanTime(t){ return (t || "").split(" ")[0]; }
+function nowMinutes(){ const d = new Date(); return d.getHours()*60 + d.getMinutes(); }
+function displayClock(){
+  const d = new Date();
+  document.getElementById("clock").textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  if (prayerTimes) updateCurrentPrayer();
+}
+setInterval(displayClock, 1000);
+
+document.getElementById("date").textContent = new Date().toLocaleDateString(undefined, { weekday:"long", month:"long", day:"numeric" });
+
+function updateCurrentPrayer(){
+  const now = nowMinutes();
+  const entries = PRAYERS.map(name => [name, minutesFromTime(prayerTimes[name])]);
+  let current = "Before Fajr";
+  let next = entries[0];
+
+  for (let i = 0; i < entries.length; i++) {
+    const thisPrayer = entries[i];
+    const following = entries[i + 1];
+    if (now >= thisPrayer[1]) current = thisPrayer[0];
+    if (now < thisPrayer[1]) { next = thisPrayer; break; }
+    if (!following) next = ["Fajr", entries[0][1] + 1440];
+  }
+
+  document.getElementById("currentPrayer").textContent = current;
+  document.getElementById("nextPrayer").textContent = next[0];
+  document.getElementById("nextTime").textContent = next[1] >= 1440 ? prayerTimes.Fajr + " tomorrow" : prayerTimes[next[0]];
+  document.getElementById("status").textContent = current === "Before Fajr" ? "Fajr has not started yet." : `It is ${current} time.`;
+}
+
+function renderTimes(){
+  document.getElementById("times").innerHTML = PRAYERS.map(p =>
+    `<div class="row"><span>${p}</span><strong>${prayerTimes[p]}</strong></div>`
+  ).join("");
+}
+
+async function fetchTimes(lat, lon){
+  const url = `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=${METHOD}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Could not load prayer times");
+  const json = await res.json();
+  const timings = json.data.timings;
+  prayerTimes = Object.fromEntries(PRAYERS.map(p => [p, cleanTime(timings[p])]));
+  renderTimes();
+  updateCurrentPrayer();
+}
+
+function loadPrayerTimes(){
+  document.getElementById("status").textContent = "Getting your location…";
+  navigator.geolocation.getCurrentPosition(
+    pos => fetchTimes(pos.coords.latitude, pos.coords.longitude).catch(showError),
+    err => showError(new Error("Location permission is needed. Open Settings → Safari → Location and allow it.")),
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 600000 }
+  );
+}
+
+function showError(err){ document.getElementById("status").textContent = err.message; }
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+displayClock();
+loadPrayerTimes();
+</script>
+</body>
+</html>
