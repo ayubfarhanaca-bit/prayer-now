@@ -1,140 +1,108 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Prayer Now" />
-  <title>Prayer Now</title>
-  <style>
-    :root { color-scheme: dark; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: radial-gradient(circle at top, #124734 0%, #071b15 55%, #020806 100%);
-      color: white;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      padding: 24px;
-      box-sizing: border-box;
-    }
-    .card {
-      width: 100%;
-      max-width: 430px;
-      padding: 36px 24px;
-      border-radius: 30px;
-      background: rgba(255,255,255,0.08);
-      box-shadow: 0 20px 50px rgba(0,0,0,0.35);
-      backdrop-filter: blur(12px);
-    }
-    .small { font-size: 18px; opacity: 0.8; margin-bottom: 18px; }
-    .prayer { font-size: clamp(52px, 17vw, 88px); font-weight: 800; line-height: 1; margin: 10px 0 18px; }
-    .next { font-size: 20px; opacity: 0.92; margin-top: 14px; }
-    .time { font-size: 16px; opacity: 0.75; margin-top: 22px; }
-    button {
-      margin-top: 22px;
-      border: none;
-      border-radius: 999px;
-      padding: 14px 22px;
-      font-size: 17px;
-      font-weight: 700;
-      background: white;
-      color: #073222;
-    }
-    .error { color: #ffe1e1; font-size: 18px; line-height: 1.45; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Prayer">
+<meta name="theme-color" content="#062d22">
+<title>Prayer</title>
+<style>
+html,body{
+  margin:0;
+  width:100%;
+  height:100%;
+  background:#062d22;
+  color:white;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
+}
+body{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  overflow:hidden;
+}
+#prayer{
+  font-size:clamp(72px,22vw,160px);
+  font-weight:800;
+  letter-spacing:3px;
+  text-transform:uppercase;
+  padding:20px;
+}
+#small{
+  position:fixed;
+  bottom:28px;
+  left:0;
+  right:0;
+  font-size:18px;
+  opacity:.65;
+}
+</style>
 </head>
 <body>
-  <main class="card">
-    <div class="small" id="label">Current prayer</div>
-    <div class="prayer" id="prayer">Loading…</div>
-    <div class="next" id="next"></div>
-    <div class="time" id="clock"></div>
-    <button id="refresh" onclick="start()">Refresh</button>
-  </main>
+  <div id="prayer">OPEN</div>
+  <div id="small">Allow location</div>
 
-  <script>
-    const prayerEl = document.getElementById('prayer');
-    const nextEl = document.getElementById('next');
-    const clockEl = document.getElementById('clock');
-    const labelEl = document.getElementById('label');
+<script>
+const prayerEl=document.getElementById("prayer");
+const smallEl=document.getElementById("small");
 
-    const names = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+function cleanTime(x){
+  return String(x).split(" ")[0];
+}
+function mins(s){
+  const parts=cleanTime(s).split(":").map(Number);
+  return parts[0]*60+parts[1];
+}
+function todayForApi(){
+  const d=new Date();
+  return `${String(d.getDate()).padStart(2,"0")}-${String(d.getMonth()+1).padStart(2,"0")}-${d.getFullYear()}`;
+}
+async function updatePrayer(lat,lon){
+  try{
+    const url=`https://api.aladhan.com/v1/timings/${todayForApi()}?latitude=${lat}&longitude=${lon}&method=3`;
+    const res=await fetch(url,{cache:"no-store"});
+    const json=await res.json();
+    const t=json.data.timings;
+    const order=["Fajr","Dhuhr","Asr","Maghrib","Isha"];
+    const nowDate=new Date();
+    const now=nowDate.getHours()*60+nowDate.getMinutes();
 
-    function parseTimeToDate(timeStr) {
-      const clean = timeStr.split(' ')[0];
-      const [h, m] = clean.split(':').map(Number);
-      const d = new Date();
-      d.setHours(h, m, 0, 0);
-      return d;
-    }
-
-    function getCurrentPrayer(timings) {
-      const now = new Date();
-      const today = names.map(name => ({ name, date: parseTimeToDate(timings[name]) }));
-      let current = 'Isha';
-      let next = 'Fajr';
-
-      if (now < today[0].date) {
-        current = 'Before Fajr';
-        next = 'Fajr';
-      } else {
-        for (let i = 0; i < today.length; i++) {
-          const thisPrayer = today[i];
-          const following = today[i + 1];
-          if (!following || now < following.date) {
-            current = thisPrayer.name;
-            next = following ? following.name : 'Fajr';
-            break;
-          }
-        }
-      }
-      return { current, next };
-    }
-
-    function updateClock() {
-      clockEl.textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    }
-
-    async function loadPrayer(lat, lon) {
-      labelEl.textContent = 'Current prayer';
-      prayerEl.textContent = 'Loading…';
-      nextEl.textContent = '';
-      try {
-        const url = `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=3`;
-        const response = await fetch(url);
-        const data = await response.json();
-        const result = getCurrentPrayer(data.data.timings);
-        prayerEl.textContent = result.current;
-        nextEl.textContent = `Next: ${result.next}`;
-      } catch (e) {
-        prayerEl.textContent = 'Error';
-        nextEl.innerHTML = '<span class="error">Could not load prayer time. Please check internet connection.</span>';
+    let current="Isha";
+    for(let i=0;i<order.length;i++){
+      const start=mins(t[order[i]]);
+      const end=i<order.length-1 ? mins(t[order[i+1]]) : 1440;
+      if(now>=start && now<end){
+        current=order[i];
+        break;
       }
     }
 
-    function start() {
-      updateClock();
-      if (!navigator.geolocation) {
-        prayerEl.textContent = 'Location not supported';
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        pos => loadPrayer(pos.coords.latitude, pos.coords.longitude),
-        () => {
-          prayerEl.textContent = 'Allow Location';
-          nextEl.innerHTML = '<span class="error">Please allow location in Safari settings, then tap Refresh.</span>';
-        },
-        { enableHighAccuracy: false, timeout: 10000, maximumAge: 3600000 }
-      );
-    }
-
-    start();
-    setInterval(() => { updateClock(); start(); }, 60000);
-  </script>
+    prayerEl.textContent=current;
+    smallEl.textContent="";
+  }catch(e){
+    prayerEl.textContent="ERROR";
+    smallEl.textContent="Check internet";
+  }
+}
+function start(){
+  if(!navigator.geolocation){
+    prayerEl.textContent="ERROR";
+    smallEl.textContent="Location not available";
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const lat=pos.coords.latitude;
+    const lon=pos.coords.longitude;
+    updatePrayer(lat,lon);
+    setInterval(()=>updatePrayer(lat,lon),60000);
+  },err=>{
+    prayerEl.textContent="ALLOW";
+    smallEl.textContent="Turn on location permission";
+  },{enableHighAccuracy:false,timeout:15000,maximumAge:3600000});
+}
+start();
+</script>
 </body>
 </html>
